@@ -1,0 +1,364 @@
+Logical Assignment - Bi Developer : 
+
+הקדמה שלי:
+ראשית, רציתי להגיד תודה רבה על הזדמנות ללמוד ולהתפתח מעבר בתחום שאני אוהב ותמיד שמח ללמוד בו דברים חדשים.
+שנית, ארצה לציין כי ישבתי שעות רבות מול המסך בניסיון לפתור את הבעיה עם סביבת העבודה שביקשתם, אך ללא הצלחה.
+יהודה הביא לי פיתרון שבאמצעותו הצלחתי לפתור את חלקים 1 ו3.
+חלק 2 היה בעייתי לפיתרון באופן הזה בגלל שהייתי צריך להעלות קובץ וזה בעיה לאותו אתר אשר יהודה הכיר לי ולכן חלק 2 נפתר בסינטקס אחר(mysql).
+השקעתי רבות במטלה זו ומאוד היה חשוב לי להצליח בה,ולכן אני מקווה שלא להיפסל על דבר שכזה ומקווה שעוד נתראה :).
+
+* מצטער על חוסר האסתטיות בכתיבת במלל - לא ראיתי אופציה לערוך בצורה יפה את הקובץ. 
+
+* הסיבה לכך שיש קוד כפול של טבלת ההנחה לפריט היא בגלל ש- View בעייתי להריץ באתר הדפדפן.
+
+Part 1:
+
+# 1: .כתבו שאילתה המציגה את הכמות, סכום המכירות וכמות החשבוניות לכל פריט
+
+WITH ItemDiscountCTE AS (
+    SELECT 
+        sl.DocNum,
+        sl.ItemCode,
+        sl.LineSum,
+        ABS(sh.DocDiscount) AS DocDiscount,
+        ISNULL(ABS((sh.DocDiscount * sl.LineSum / totalLineSum.TotalSum)), 0) AS ItemDiscount
+    FROM 
+        SalesLine sl
+    JOIN 
+        SalesHeader sh ON sl.DocNum = sh.DocNum
+    JOIN 
+        (SELECT DocNum, SUM(LineSum) AS TotalSum 
+         FROM SalesLine 
+         GROUP BY DocNum) totalLineSum ON sl.DocNum = totalLineSum.DocNum
+)
+
+SELECT 
+    T1.ItemCode, 
+    SUM(T2.Qty) AS Total_Quantity, 
+    SUM(T2.LineSum - T3.ItemDiscount) AS Total_Sales,  
+    COUNT(DISTINCT T2.DocNum) AS Total_Docs
+FROM 
+    Items AS T1
+LEFT JOIN 
+    SalesLine AS T2 ON T1.ItemCode = T2.ItemCode  
+INNER JOIN 
+    ItemDiscountCTE AS T3 ON T2.DocNum = T3.DocNum 
+                         AND T2.ItemCode = T3.ItemCode
+GROUP BY 
+    T1.ItemCode;
+
+
+#2: .כתבו שאילתה המציגה את מספרי החשבוניות שבכל אחת מהן קיים פריט 3611010 וגם פריט 3611600 
+
+SELECT DocNum
+FROM SalesLine
+WHERE ItemCode IN ('3611010', '3611600')
+GROUP BY DocNum
+HAVING COUNT(DISTINCT ItemCode) = 2;
+
+#3: .כתבו שאילתה המציגה את אנשי המכירות שמכרו את כלל הפריטים המוצעים בקטלוג
+
+
+SELECT T1.SalesPersonName
+FROM SalesPerson AS T1
+	INNER JOIN SalesHeader AS T2 
+		ON T1.SalesPersonCode = T2.SalesPersonCode
+	INNER JOIN SalesLine AS T3
+		ON T2.DocNum = T3.DocNum
+GROUP BY T1.SalesPersonName
+HAVING COUNT(DISTINCT T3.ItemCode) = (SELECT COUNT(DISTINCT ItemCode) FROM Items);
+
+
+#4: כתבו שאילתה המציגה את הפריטים שנמכרו הן אצל איש המכירות שמכר את המגוון הגדול ביותר בקטלוג והן
+אצל איש המכירות שמכר את הכמות הגדולה ביותר - אך לא נמכרו אצל איש המכירות שמכר את המגוון הקטן
+ביותר בקטלוג.
+
+-- CTE for the most diverse salesperson based on distinct ItemCode:
+WITH DiverseSalesMan AS (
+    SELECT TOP 1 T1.SalesPersonCode
+    FROM SalesPerson AS T1
+    INNER JOIN SalesHeader AS T2 
+        ON T1.SalesPersonCode = T2.SalesPersonCode
+    INNER JOIN SalesLine AS T3
+        ON T2.DocNum = T3.DocNum
+    GROUP BY T1.SalesPersonCode
+    ORDER BY COUNT(DISTINCT T3.ItemCode) DESC
+),
+    
+-- CTE for the least diverse salesperson based on distinct ItemCode:
+LeastDiverseSalesMan AS (
+    SELECT TOP 1 T1.SalesPersonCode
+    FROM SalesPerson AS T1
+    INNER JOIN SalesHeader AS T2 
+        ON T1.SalesPersonCode = T2.SalesPersonCode
+    INNER JOIN SalesLine AS T3
+        ON T2.DocNum = T3.DocNum
+    GROUP BY T1.SalesPersonCode
+    ORDER BY COUNT(DISTINCT T3.ItemCode) ASC
+),
+
+-- CTE for the salesperson with the highest total quantity sold:
+MostQtySalesMan AS (
+    SELECT TOP 1 T1.SalesPersonCode
+    FROM SalesPerson AS T1
+    INNER JOIN SalesHeader AS T2 
+        ON T1.SalesPersonCode = T2.SalesPersonCode
+    INNER JOIN SalesLine AS T3
+        ON T2.DocNum = T3.DocNum
+    GROUP BY T1.SalesPersonCode
+    ORDER BY SUM(T3.Qty) DESC
+)
+
+SELECT distinct T3.ItemCode
+FROM SalesPerson AS T1
+INNER JOIN SalesHeader AS T2 
+    ON T1.SalesPersonCode = T2.SalesPersonCode
+INNER JOIN SalesLine AS T3
+    ON T2.DocNum = T3.DocNum
+WHERE (T1.SalesPersonCode IN (SELECT SalesPersonCode FROM DiverseSalesMan)
+    OR T1.SalesPersonCode IN (SELECT SalesPersonCode FROM MostQtySalesMan))
+    AND T1.SalesPersonCode NOT IN (SELECT SalesPersonCode FROM LeastDiverseSalesMan);
+
+#5: עבור כל איש מכירות מצאו את הפריטים שנמכרו מתחת לממוצע מכירות לפריט של אותו איש מכירות, כתבו
+שאילתה המציגה את איש המכירות, מספרי הפריטים ממוצע מכירות ליחידה ואת סכום המכירות. 
+
+WITH ItemDiscountCTE AS (
+    SELECT 
+        sl.DocNum,
+        sl.ItemCode,
+        sl.LineSum,
+        ABS(sh.DocDiscount) AS DocDiscount,
+        ISNULL(ABS((sh.DocDiscount * sl.LineSum / totalLineSum.TotalSum)), 0) AS ItemDiscount
+    FROM 
+        SalesLine sl
+    JOIN 
+        SalesHeader sh ON sl.DocNum = sh.DocNum
+    JOIN 
+        (SELECT DocNum, SUM(LineSum) AS TotalSum 
+         FROM SalesLine 
+         GROUP BY DocNum) totalLineSum ON sl.DocNum = totalLineSum.DocNum
+),
+Avg_Sales_Per_Item AS (
+    SELECT 
+        T1.SalesPersonCode, 
+        T1.SalesPersonName,
+        T3.ItemCode,
+        AVG(T3.LineSum - T4.ItemDiscount) AS Avg_Sales_Per_Item  
+    FROM 
+        SalesPerson AS T1
+    INNER JOIN 
+        SalesHeader AS T2 ON T1.SalesPersonCode = T2.SalesPersonCode
+    INNER JOIN 
+        SalesLine AS T3 ON T2.DocNum = T3.DocNum
+    INNER JOIN 
+        ItemDiscountCTE AS T4 ON T3.DocNum = T4.DocNum AND T3.ItemCode = T4.ItemCode
+    GROUP BY 
+        T1.SalesPersonCode, T1.SalesPersonName, T3.ItemCode
+)
+
+SELECT 
+    T1.SalesPersonName,
+    T3.ItemCode,
+    SUM(T3.LineSum - T4.ItemDiscount) / SUM(T3.Qty) AS Avg_Price_Per_Unit,  
+    SUM(T3.LineSum - T4.ItemDiscount) AS Total_Sales  
+FROM 
+    SalesPerson AS T1
+INNER JOIN 
+    SalesHeader AS T2 ON T1.SalesPersonCode = T2.SalesPersonCode
+INNER JOIN 
+    SalesLine AS T3 ON T2.DocNum = T3.DocNum
+INNER JOIN 
+    ItemDiscountCTE AS T4 ON T3.DocNum = T4.DocNum 
+                         AND T3.ItemCode = T4.ItemCode
+INNER JOIN 
+    Avg_Sales_Per_Item AS T5 ON T1.SalesPersonCode = T5.SalesPersonCode 
+                             AND T3.ItemCode = T5.ItemCode
+WHERE 
+    T3.LineSum - T4.ItemDiscount < T5.Avg_Sales_Per_Item  
+GROUP BY 
+    T1.SalesPersonCode,
+    T1.SalesPersonName,
+    T3.ItemCode;
+
+
+Part2: מענה כולל לסעיפים  1+ 2 - לא העתקתי את השאלה כי זה מענה לכל המלל- MySql
+
+
+WITH Monthly_Quantity AS (
+    SELECT 
+        DATE_FORMAT(STR_TO_DATE(Date, '%d/%m/%Y'), '%Y-%m') AS Month_Year,
+        Part,
+        SUM(CASE WHEN Quant > 0 THEN Quant ELSE 0 END) AS Quantity_For_Month
+    FROM SalesData
+    GROUP BY Part, Month_Year
+),
+Calender_Sales AS (
+    SELECT 
+        m1.Part,
+        m1.Month_Year,
+        m1.Quantity_For_Month,
+        SUM(m2.Quantity_For_Month) AS Quantity_12_Calendar_Months
+    FROM 
+        Monthly_Quantity m1
+    INNER JOIN 
+        Monthly_Quantity m2
+        ON m1.Part = m2.Part
+        AND TIMESTAMPDIFF(MONTH, STR_TO_DATE(CONCAT(m2.Month_Year, '-01'), '%Y-%m-%d'), STR_TO_DATE(CONCAT(m1.Month_Year, '-01'), '%Y-%m-%d')) BETWEEN 0 AND 11
+    GROUP BY 
+        m1.Part, 
+        m1.Month_Year, 
+        m1.Quantity_For_Month
+),
+Ranked_Sales AS (
+    SELECT 
+        Part,
+        Month_Year,
+        Quantity_For_Month,
+        Quantity_12_Calendar_Months,
+        ROW_NUMBER() OVER (PARTITION BY Part ORDER BY Month_Year DESC) AS sales_rank
+    FROM 
+        Calender_Sales
+),
+Cumulative_Sales AS (
+    SELECT 
+        Part,
+        Month_Year,
+        Quantity_For_Month,
+        Quantity_12_Calendar_Months,
+        (SELECT SUM(sub_rq.Quantity_For_Month)
+         FROM Ranked_Sales sub_rq
+         WHERE sub_rq.Part = rs.Part
+         AND sub_rq.sales_rank BETWEEN rs.sales_rank AND rs.sales_rank + 11) AS Quantity_Last_12_Sales_Months
+    FROM 
+        Ranked_Sales rs
+)
+SELECT 
+    Part,
+    Month_Year,
+    Quantity_For_Month,
+    Quantity_12_Calendar_Months,
+    Quantity_Last_12_Sales_Months
+FROM 
+    Cumulative_Sales
+# מטעמי נוחות לחישוב
+-- ORDER BY 
+--     Part, Month_Year DESC;
+    
+
+
+Part 3:
+
+1. פרוצדורה ב- SQL המקבלת כקלט את עלות המעבר ומחשבת את עלות התוכנית. הפרוצדורה לא צריכה
+להחזיר דבר ואין צורך לתת את פירוט סדרת המיקומים 
+
+-- Create table in SQL Server syntax
+CREATE TABLE CostsTable (
+    Month INT,
+    CostToJerusalem INT,
+    CostToBneiBrak INT
+);
+
+-- Insert values into the table
+INSERT INTO CostsTable (Month, CostToJerusalem, CostToBneiBrak) VALUES
+(1, 1, 50),
+(2, 3, 20),
+(3, 20, 2),
+(4, 30, 4);
+GO
+
+-- Procedure to calculate the minimum cost
+CREATE PROCEDURE CalculateMinCost
+AS
+BEGIN
+    DECLARE @CurrentMonth INT;
+    DECLARE @CurrentCostJerusalem INT;
+    DECLARE @CurrentCostBneiBrak INT;
+    DECLARE @PreviousCity NVARCHAR(50) = NULL;
+    DECLARE @TransactionCost INT = 10;
+    DECLARE @TotalCost INT = 0;
+
+    -- Cursor to iterate through the table
+    DECLARE cur CURSOR FOR
+        SELECT Month, CostToJerusalem, CostToBneiBrak 
+        FROM CostsTable 
+        ORDER BY Month;
+
+    OPEN cur;
+
+    FETCH NEXT FROM cur INTO @CurrentMonth, @CurrentCostJerusalem, @CurrentCostBneiBrak;
+    
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- First month, pick the cheaper option and no transaction cost
+        IF @PreviousCity IS NULL
+        BEGIN
+            IF @CurrentCostJerusalem <= @CurrentCostBneiBrak
+            BEGIN
+                SET @TotalCost = @CurrentCostJerusalem;
+                SET @PreviousCity = 'Jerusalem';
+            END
+            ELSE
+            BEGIN
+                SET @TotalCost = @CurrentCostBneiBrak;
+                SET @PreviousCity = 'Bnei_Brak';
+            END
+        END
+        ELSE
+        BEGIN
+            -- From the second month onward, decide whether to stay in the same city or switch
+            IF @PreviousCity = 'Jerusalem'
+            BEGIN
+                IF @CurrentCostJerusalem <= (@CurrentCostBneiBrak + @TransactionCost)
+                BEGIN
+                    -- Stay in Jerusalem
+                    SET @TotalCost = @TotalCost + @CurrentCostJerusalem;
+                END
+                ELSE
+                BEGIN
+                    -- Switch to Bnei Brak
+                    SET @TotalCost = @TotalCost + @CurrentCostBneiBrak + @TransactionCost;
+                    SET @PreviousCity = 'Bnei_Brak';
+                END
+            END
+            ELSE IF @PreviousCity = 'Bnei_Brak'
+            BEGIN
+                IF @CurrentCostBneiBrak <= (@CurrentCostJerusalem + @TransactionCost)
+                BEGIN
+                    -- Stay in Bnei Brak
+                    SET @TotalCost = @TotalCost + @CurrentCostBneiBrak;
+                END
+                ELSE
+                BEGIN
+                    -- Switch to Jerusalem
+                    SET @TotalCost = @TotalCost + @CurrentCostJerusalem + @TransactionCost;
+                    SET @PreviousCity = 'Jerusalem';
+                END
+            END
+        END
+
+        FETCH NEXT FROM cur INTO @CurrentMonth, @CurrentCostJerusalem, @CurrentCostBneiBrak;
+    END
+
+    CLOSE cur;
+    DEALLOCATE cur;
+
+    -- Output the total cost
+    SELECT @TotalCost AS Total_Cost;
+END;
+GO
+
+EXEC CalculateMinCost;
+
+
+2.הסבר בשפה חופשית על שיטת החישוב, כיצד הפתרון פועל ומדוע התוכנית תעבוד בכל מקרה.
+
+* לא היה חידוד לגבי עניין שיוויון בין הצעדים כלומר: במידה וערך הפעלת החברה מירושליים הוא 30 וערך הפעלת החברה בני ברק הוא 20 אך היינו בהתחלה בירושליים אז צריך להוסיך את עלות המעבר כך שנוצר שיוויון של 30-30. במצב כזה, לא עשיתי צעדים נוספים אלא, נשארתי באותה העיר כי אנחנו לא צופים לשורה הבאה ורואים את ההשלכות, חשוב לציין זאת.
+הסבר כולל:
+כאשר, אנחנו במצב הראשוני כלומר עוד לא עברנו על שורות בדאטה הנתון. אז אין עלויות ואין עיר ידועה להתחלה כך שכל הנתונים ריקים.
+ברגע שאנחנו בשורה הראשונה(בתחילת הדרך כלומר, איננו יודעים לאן פנינו מועדות) –ערך העיר הקודמת הוא ריק ולכן נבדוק איפה העלות נמוכה יותר בירושליים או בבני ברק. העיר שבה העלות הנמוכה ביותר היא העיר בה נתחיל ולכן ערך העיר הקודמת ישתנה לשמה של אותה העיר. מאחר וזו השורה הראשונה העלות הכוללת תהיה שווה לעלות הנמוכה ביותר מבין שתי הערים(ללא כל עלות מעבר).
+משם, ישנה המשכיות קצת שונה:(שורה 2 ואילך בדאטה)
+אם העיר הקודמת היא ירושליים אז נבדוק מהי העלות הההפעלה בצעד הבא (בהתקדמות שורה מטה) בירושליים, במידה ואותה עלות נמוכה\שווה מעלות הפעלת החברה בבני ברק פלוס עלות מעבר( 10) אז נמשיך בירושלים, אחרת נעבור לבני ברק וערך העיר הקודמת יעבור לבני ברק, ומשם אותו חישוב יעשה אך הפעם לבני ברק.
+בזמן זה כמובן שעלות המעבר בין המקומות תתווסף לערך העלות הכוללת – עלות מצטברת לאורך המעברים והקפיצות בין השורות על מנת למקסם את העלות המינימלית ביותר לתוכנית זו.
+אופציות להוספה של העלות הכוללת בשלבים הללו הן: או עלות הפעלת החברה באותה עיר שהיינו בה כך שאין עלות מעבר או במידה ועברנו כלומר, הפעלת החברה בעיר אחרת פלוס עלות המעבר יחדיו יהיו נמוכות יותר מעלות ההפעלה באותה העיר בה היינו. כמובן והעלויות הללו נסכמו לעלות אחת שכן היא תהיה העלות המינימאלית האופטימאלית כאשר אין עוד מעברים לבצע(שורות לעבור עליהן).
+תוכנית זו תעבוד בכל מקרה, מאחר והיא לוקחת את מצבי הקיצון של שיוויון ועלות מעבר בין ההרים עוד לפני המעברים כדי לראות מה יותר משתלם לה על מנת שהעלות תהיה הנמוכה ביותר וסוכמת עד שאין עוד אופציות המשך.
+
